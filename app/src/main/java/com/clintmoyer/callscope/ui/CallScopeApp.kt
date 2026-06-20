@@ -1025,13 +1025,18 @@ private val CallDirection.label: String
     }
 
 private fun Duration.formatDuration(): String {
-    val hours = toHours()
-    val minutes = toMinutes() % 60
+    val totalSeconds = toSeconds()
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+
     return when {
         hours > 0 && minutes > 0 -> "${hours}h ${minutes}m"
         hours > 0 -> "${hours}h"
+        minutes > 0 && seconds > 0 -> "${minutes}m ${seconds}s"
         minutes > 0 -> "${minutes}m"
-        else -> "0m"
+        seconds > 0 -> "${seconds}s"
+        else -> "0s"
     }
 }
 

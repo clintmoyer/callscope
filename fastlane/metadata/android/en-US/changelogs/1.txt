@@ -1,0 +1,5 @@
+Initial release.
+
+* Add local-first call log analytics
+* Add review, people, insights, and settings screens
+* Show sample data when call-log access has not been granted

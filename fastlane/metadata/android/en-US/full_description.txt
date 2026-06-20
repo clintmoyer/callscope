@@ -1,0 +1,13 @@
+CallScope helps you understand patterns in your Android call history without sending your call records anywhere.
+
+The app summarizes your local call log into review queues, ranked contacts, and trend views so you can see who you talk with most, who you miss, and how your call activity changes over time.
+
+Features:
+
+* Review missed, screened, blocked, and reconnected calls
+* Rank contacts by call time, call count, missed calls, and recency
+* Explore call-time trends and incoming/outgoing balance
+* Use built-in sample data until call-log access is granted
+* Keep analytics local to your device
+
+CallScope requests call log and contacts access only to read call records and display contact names on this phone. It has no cloud account, no remote sync, and no network permission.

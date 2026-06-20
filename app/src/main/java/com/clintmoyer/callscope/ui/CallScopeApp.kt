@@ -96,8 +96,10 @@ import com.clintmoyer.callscope.ui.theme.ThemeMode
 import com.clintmoyer.callscope.ui.theme.good
 import com.clintmoyer.callscope.ui.theme.warning
 import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.math.max
 
 @Composable
@@ -243,16 +245,26 @@ private fun CallsScreen(
             HeroStats(state.summary)
         }
         item {
-            SectionTitle("Useful answers")
+            SectionTitle("Needs attention")
         }
         item {
-            InsightAnswerGrid(state.summary, onContactSelected)
+            AttentionQueue(summary = state.summary, onContactSelected = onContactSelected)
         }
         item {
-            SectionTitle("Recent calls")
+            SectionTitle("Recent activity")
+        }
+        item {
+            RecentActivitySummary(state.summary)
+        }
+        item {
+            SectionTitle("Timeline")
         }
         items(state.summary.calls.take(12), key = { it.id }) { call ->
-            CallRow(call = call, onClick = { onContactSelected(call.contactId) })
+            CallRow(
+                call = call,
+                context = call.recentContext(state.summary),
+                onClick = { onContactSelected(call.contactId) },
+            )
         }
     }
 }
@@ -595,6 +607,66 @@ private fun InsightAnswerGrid(summary: AnalyticsSummary, onContactSelected: (Str
 }
 
 @Composable
+private fun AttentionQueue(summary: AnalyticsSummary, onContactSelected: (String) -> Unit) {
+    val followUps = summary.calls
+        .filter { it.direction == CallDirection.Missed || it.direction == CallDirection.Rejected }
+        .take(3)
+    val reconnects = summary.calls
+        .filter { it.recentContext(summary).startsWith("Reconnected") }
+        .take(2)
+    val items = (followUps + reconnects).distinctBy { it.id }.take(4)
+
+    if (items.isEmpty()) {
+        ElevatedCard(shape = RoundedCornerShape(8.dp)) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(Icons.Outlined.Security, contentDescription = null, tint = MaterialTheme.colorScheme.good)
+                Column {
+                    Text("No obvious follow-ups", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Recent calls do not show missed or screened conversations in this period.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        return
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        items.forEach { call ->
+            CallRow(
+                call = call,
+                context = call.attentionContext(summary),
+                onClick = { onContactSelected(call.contactId) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecentActivitySummary(summary: AnalyticsSummary) {
+    val lastSeven = summary.calls.filter { it.startedAt >= Instant.now().minus(7, ChronoUnit.DAYS) }
+    val missed = lastSeven.count { it.direction == CallDirection.Missed || it.direction == CallDirection.Rejected }
+    val longCalls = lastSeven.count { it.duration >= Duration.ofMinutes(30) }
+    val activeContacts = lastSeven.map { it.contactId }.distinct().size
+
+    ElevatedCard(shape = RoundedCornerShape(8.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Last 7 days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            StatGrid(
+                listOf(
+                    "Calls" to lastSeven.size.toString(),
+                    "People" to activeContacts.toString(),
+                    "Missed" to missed.toString(),
+                    "Long calls" to longCalls.toString(),
+                ),
+            )
+        }
+    }
+}
+
+@Composable
 private fun AnswerCard(
     label: String,
     value: String,
@@ -646,7 +718,7 @@ private fun ContactRow(contact: ContactStats, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CallRow(call: CallRecord, onClick: () -> Unit) {
+private fun CallRow(call: CallRecord, context: String? = null, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -661,6 +733,9 @@ private fun CallRow(call: CallRecord, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(call.displayName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${call.direction.label} • ${call.startedAt.relativeDate()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (context != null) {
+                Text(context, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         Text(call.duration.formatDuration(), style = MaterialTheme.typography.labelLarge)
     }
@@ -908,4 +983,34 @@ private fun Int.hourLabel(): String = when (this) {
     in 1..11 -> "$this AM"
     12 -> "12 PM"
     else -> "${this - 12} PM"
+}
+
+private fun CallRecord.attentionContext(summary: AnalyticsSummary): String {
+    return when (direction) {
+        CallDirection.Missed -> "Missed call to review"
+        CallDirection.Rejected -> "Rejected call in recent activity"
+        CallDirection.Blocked -> "Blocked call recorded"
+        else -> recentContext(summary)
+    }
+}
+
+private fun CallRecord.recentContext(summary: AnalyticsSummary): String {
+    val contactCalls = summary.contacts
+        .firstOrNull { it.contactId == contactId }
+        ?.calls
+        .orEmpty()
+    val previous = contactCalls
+        .filter { it.startedAt < startedAt }
+        .maxByOrNull { it.startedAt }
+    val daysSincePrevious = previous?.startedAt?.until(startedAt, ChronoUnit.DAYS)
+
+    return when {
+        direction == CallDirection.Missed -> "Potential follow-up"
+        direction == CallDirection.Rejected -> "Screened call"
+        direction == CallDirection.Blocked -> "Blocked number"
+        duration >= Duration.ofMinutes(45) -> "Long conversation"
+        daysSincePrevious != null && daysSincePrevious >= 14 -> "Reconnected after ${daysSincePrevious}d"
+        contactCalls.size >= 4 -> "${contactCalls.size} calls this period"
+        else -> "Recent touchpoint"
+    }
 }

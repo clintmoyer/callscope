@@ -184,7 +184,7 @@ private fun CallScopeApp(
             )
         } else {
             when (state.selectedTab) {
-                AppTab.Calls -> CallsScreen(
+                AppTab.Review -> ReviewScreen(
                     state = state,
                     onRangeSelected = onRangeSelected,
                     onContactSelected = onContactSelected,
@@ -217,7 +217,7 @@ private fun CallScopeApp(
 }
 
 @Composable
-private fun CallsScreen(
+private fun ReviewScreen(
     state: CallScopeUiState,
     onRangeSelected: (DateRange) -> Unit,
     onContactSelected: (String) -> Unit,
@@ -227,11 +227,11 @@ private fun CallsScreen(
     ScreenList(modifier) {
         item {
             Header(
-                title = "Call insights",
+                title = "Review",
                 subtitle = when {
-                    !state.usingSampleData -> "Local analytics from this phone"
-                    state.canReadCallLog -> "Sample analytics because this device has no readable call log"
-                    else -> "Sample analytics until call-log access is granted"
+                    !state.usingSampleData -> "Follow-ups and recent changes from this phone"
+                    state.canReadCallLog -> "Sample review because this device has no readable call log"
+                    else -> "Sample review until call-log access is granted"
                 },
             )
         }
@@ -242,16 +242,13 @@ private fun CallsScreen(
             RangeChips(selected = state.dateRange, onSelected = onRangeSelected)
         }
         item {
-            HeroStats(state.summary)
-        }
-        item {
-            SectionTitle("Needs attention")
+            SectionTitle("Action queue")
         }
         item {
             AttentionQueue(summary = state.summary, onContactSelected = onContactSelected)
         }
         item {
-            SectionTitle("Recent activity")
+            SectionTitle("Activity pulse")
         }
         item {
             RecentActivitySummary(state.summary)
@@ -980,7 +977,7 @@ private fun Meter(value: Float, maxValue: Float) {
 
 private val AppTab.label: String
     get() = when (this) {
-        AppTab.Calls -> "Calls"
+        AppTab.Review -> "Review"
         AppTab.People -> "People"
         AppTab.Insights -> "Insights"
         AppTab.Settings -> "Settings"
@@ -988,7 +985,7 @@ private val AppTab.label: String
 
 private val AppTab.icon: ImageVector
     get() = when (this) {
-        AppTab.Calls -> Icons.Outlined.Phone
+        AppTab.Review -> Icons.Outlined.Security
         AppTab.People -> Icons.Outlined.Person
         AppTab.Insights -> Icons.Outlined.BarChart
         AppTab.Settings -> Icons.Outlined.Settings

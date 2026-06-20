@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class AppTab {
-    Calls,
+    Review,
     People,
     Insights,
     Settings,
@@ -24,7 +24,7 @@ enum class AppTab {
 
 data class CallScopeUiState(
     val summary: AnalyticsSummary = AnalyticsSummary.Empty,
-    val selectedTab: AppTab = AppTab.Calls,
+    val selectedTab: AppTab = AppTab.Review,
     val selectedContactId: String? = null,
     val contactRank: ContactRank = ContactRank.CallTime,
     val dateRange: DateRange = DateRange.Month,

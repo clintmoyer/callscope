@@ -27,7 +27,7 @@ data class CallScopeUiState(
     val selectedTab: AppTab = AppTab.Review,
     val selectedContactId: String? = null,
     val contactRank: ContactRank = ContactRank.CallTime,
-    val dateRange: DateRange = DateRange.Month,
+    val dateRange: DateRange = DateRange.All,
     val themeMode: ThemeMode = ThemeMode.System,
     val canReadCallLog: Boolean = false,
     val usingSampleData: Boolean = true,

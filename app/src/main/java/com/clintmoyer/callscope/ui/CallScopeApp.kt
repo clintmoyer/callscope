@@ -257,14 +257,10 @@ private fun CallsScreen(
             RecentActivitySummary(state.summary)
         }
         item {
-            SectionTitle("Timeline")
+            SectionTitle("Relationship changes")
         }
-        items(state.summary.calls.take(12), key = { it.id }) { call ->
-            CallRow(
-                call = call,
-                context = call.recentContext(state.summary),
-                onClick = { onContactSelected(call.contactId) },
-            )
+        item {
+            RelationshipChangeCards(state.summary, onContactSelected)
         }
     }
 }
@@ -608,13 +604,38 @@ private fun InsightAnswerGrid(summary: AnalyticsSummary, onContactSelected: (Str
 
 @Composable
 private fun AttentionQueue(summary: AnalyticsSummary, onContactSelected: (String) -> Unit) {
+    val contactsById = summary.contacts.associateBy { it.contactId }
     val followUps = summary.calls
-        .filter { it.direction == CallDirection.Missed || it.direction == CallDirection.Rejected }
-        .take(3)
+        .filter { it.direction == CallDirection.Missed || it.direction == CallDirection.Rejected || it.direction == CallDirection.Blocked }
+        .groupBy { it.contactId }
+        .map { (contactId, calls) ->
+            val latest = calls.maxBy { it.startedAt }
+            AttentionItem(
+                contactId = contactId,
+                name = contactsById[contactId]?.displayName ?: latest.displayName,
+                label = "${calls.size} missed or screened",
+                detail = "Last ${latest.direction.label.lowercase()} on ${latest.startedAt.relativeDate()}",
+                priority = calls.size * 10,
+            )
+        }
     val reconnects = summary.calls
         .filter { it.recentContext(summary).startsWith("Reconnected") }
-        .take(2)
-    val items = (followUps + reconnects).distinctBy { it.id }.take(4)
+        .groupBy { it.contactId }
+        .map { (contactId, calls) ->
+            val latest = calls.maxBy { it.startedAt }
+            AttentionItem(
+                contactId = contactId,
+                name = contactsById[contactId]?.displayName ?: latest.displayName,
+                label = "Reconnected",
+                detail = latest.recentContext(summary),
+                priority = 5,
+            )
+        }
+    val items = (followUps + reconnects)
+        .groupBy { it.contactId }
+        .map { (_, grouped) -> grouped.maxBy { it.priority } }
+        .sortedByDescending { it.priority }
+        .take(4)
 
     if (items.isEmpty()) {
         ElevatedCard(shape = RoundedCornerShape(8.dp)) {
@@ -634,35 +655,79 @@ private fun AttentionQueue(summary: AnalyticsSummary, onContactSelected: (String
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items.forEach { call ->
-            CallRow(
-                call = call,
-                context = call.attentionContext(summary),
-                onClick = { onContactSelected(call.contactId) },
-            )
+        items.forEach { item ->
+            AttentionCard(item = item, onClick = { onContactSelected(item.contactId) })
         }
     }
 }
 
 @Composable
 private fun RecentActivitySummary(summary: AnalyticsSummary) {
-    val lastSeven = summary.calls.filter { it.startedAt >= Instant.now().minus(7, ChronoUnit.DAYS) }
+    val now = Instant.now()
+    val lastSevenStart = now.minus(7, ChronoUnit.DAYS)
+    val previousSevenStart = now.minus(14, ChronoUnit.DAYS)
+    val lastSeven = summary.calls.filter { it.startedAt >= lastSevenStart }
+    val previousSeven = summary.calls.filter { it.startedAt >= previousSevenStart && it.startedAt < lastSevenStart }
     val missed = lastSeven.count { it.direction == CallDirection.Missed || it.direction == CallDirection.Rejected }
     val longCalls = lastSeven.count { it.duration >= Duration.ofMinutes(30) }
-    val activeContacts = lastSeven.map { it.contactId }.distinct().size
+    val delta = lastSeven.size - previousSeven.size
 
     ElevatedCard(shape = RoundedCornerShape(8.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Last 7 days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Current pace", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             StatGrid(
                 listOf(
                     "Calls" to lastSeven.size.toString(),
-                    "People" to activeContacts.toString(),
+                    "Vs prior week" to delta.signedCount(),
                     "Missed" to missed.toString(),
                     "Long calls" to longCalls.toString(),
                 ),
             )
         }
+    }
+}
+
+@Composable
+private fun AttentionCard(item: AttentionItem, onClick: () -> Unit) {
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Avatar(item.name)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(item.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RelationshipChangeCards(summary: AnalyticsSummary, onContactSelected: (String) -> Unit) {
+    val quiet = summary.quietContacts.firstOrNull()
+    val active = summary.moreActiveContacts.firstOrNull()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        AnswerCard(
+            label = "Going quiet",
+            value = quiet?.stats?.displayName ?: "No clear drop-off",
+            detail = quiet?.let { "${it.previousCalls} prior, ${it.recentCalls} recent" } ?: "No follow-up signal",
+            contactId = quiet?.stats?.contactId,
+            onContactSelected = onContactSelected,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        AnswerCard(
+            label = "Getting more active",
+            value = active?.stats?.displayName ?: "No spike",
+            detail = active?.let { "+${it.delta} calls recently" } ?: "No unusual increase",
+            contactId = active?.stats?.contactId,
+            onContactSelected = onContactSelected,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -985,15 +1050,6 @@ private fun Int.hourLabel(): String = when (this) {
     else -> "${this - 12} PM"
 }
 
-private fun CallRecord.attentionContext(summary: AnalyticsSummary): String {
-    return when (direction) {
-        CallDirection.Missed -> "Missed call to review"
-        CallDirection.Rejected -> "Rejected call in recent activity"
-        CallDirection.Blocked -> "Blocked call recorded"
-        else -> recentContext(summary)
-    }
-}
-
 private fun CallRecord.recentContext(summary: AnalyticsSummary): String {
     val contactCalls = summary.contacts
         .firstOrNull { it.contactId == contactId }
@@ -1014,3 +1070,16 @@ private fun CallRecord.recentContext(summary: AnalyticsSummary): String {
         else -> "Recent touchpoint"
     }
 }
+
+private fun Int.signedCount(): String = when {
+    this > 0 -> "+$this"
+    else -> toString()
+}
+
+private data class AttentionItem(
+    val contactId: String,
+    val name: String,
+    val label: String,
+    val detail: String,
+    val priority: Int,
+)

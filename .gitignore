@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+
+app/build/
+
+/calls-dark.png
+/calls-final.png
+/settings-dark.png
